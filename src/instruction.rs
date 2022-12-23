@@ -43,7 +43,7 @@ pub(crate) enum Instruction<'template> {
     Value(Path<'template>),
 
     /// Look up the value for the given path and pass it to the formatter with the given name
-    FormattedValue(Path<'template>, &'template str),
+    FormattedValue(Path<'template>, &'template str, Option<&'template str>),
 
     /// Look up the value at the given path and jump to the given instruction index if that value
     /// is truthy (if the boolean is true) or falsy (if the boolean is false)

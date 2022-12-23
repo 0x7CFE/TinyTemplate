@@ -187,22 +187,22 @@ impl<'template> Template<'template> {
                             }
                             "@root" => {
                                 let value_to_render = render_context.lookup_root()?;
-                                default_formatter(value_to_render, output)?;
+                                default_formatter(value_to_render, None, output)?;
                             }
                             _ => panic!(), // This should have been caught by the parser.
                         }
                     } else {
                         let value_to_render = render_context.lookup(path)?;
-                        default_formatter(value_to_render, output)?;
+                        default_formatter(value_to_render, None, output)?;
                     }
                     program_counter += 1;
                 }
-                Instruction::FormattedValue(path, name) => {
+                Instruction::FormattedValue(path, name, args) => {
                     // The @ keywords aren't supported for formatted values. Should they be?
                     let value_to_render = render_context.lookup(path)?;
                     match formatter_registry.get(name) {
                         Some(formatter) => {
-                            let formatter_result = formatter(value_to_render, output);
+                            let formatter_result = formatter(value_to_render, *args, output);
                             if let Err(err) = formatter_result {
                                 return Err(called_formatter_error(self.original_text, name, err));
                             }
@@ -391,9 +391,9 @@ mod test {
         map
     }
 
-    fn format(value: &Value, output: &mut String) -> Result<()> {
+    fn format(value: &Value, _args: Option<&str>, output: &mut String) -> Result<()> {
         output.push_str("{");
-        ::format(value, output)?;
+        ::format(value, None, output)?;
         output.push_str("}");
         Ok(())
     }

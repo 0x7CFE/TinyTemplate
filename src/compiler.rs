@@ -143,9 +143,9 @@ impl<'template> TemplateCompiler<'template> {
             } else if self.remaining_text.starts_with('{') {
                 self.trim_next = false;
 
-                let (path, name) = self.consume_value()?;
+                let (path, name, args) = self.consume_value()?;
                 let instruction = match name {
-                    Some(name) => Instruction::FormattedValue(path, name),
+                    Some(name) => Instruction::FormattedValue(path, name, args),
                     None => Instruction::Value(path),
                 };
                 self.instructions.push(instruction);
@@ -293,7 +293,7 @@ impl<'template> TemplateCompiler<'template> {
 
     /// Advance the cursor to the end of the value tag and return the value's path and optional
     /// formatter name.
-    fn consume_value(&mut self) -> Result<(Path<'template>, Option<&'template str>)> {
+    fn consume_value(&mut self) -> Result<(Path<'template>, Option<&'template str>, Option<&'template str>)> {
         let tag = self.consume_tag("}")?;
         let mut tag = tag[1..(tag.len() - 1)].trim();
         if tag.starts_with('-') {
@@ -309,9 +309,15 @@ impl<'template> TemplateCompiler<'template> {
             let (path_str, name_str) = tag.split_at(index);
             let name = name_str[1..].trim();
             let path = self.parse_path(path_str.trim())?;
-            Ok((path, Some(name)))
+
+            if let Some(arg_index) = name.find(" ") {
+                let (name, args) = name.split_at(arg_index);
+                Ok((path, Some(name), Some(&args[1..])))
+            } else {
+                Ok((path, Some(name), None))
+            }
         } else {
-            Ok((self.parse_path(tag)?, None))
+            Ok((self.parse_path(tag)?, None, None))
         }
     }
 
@@ -461,7 +467,7 @@ mod test {
         let instructions = compile(text).unwrap();
         assert_eq!(1, instructions.len());
         assert_eq!(
-            &FormattedValue(vec![PathStep::Name("foobar")], "my_formatter"),
+            &FormattedValue(vec![PathStep::Name("foobar")], "my_formatter", None),
             &instructions[0]
         );
     }
