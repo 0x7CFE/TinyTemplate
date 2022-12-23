@@ -83,7 +83,13 @@ use std::fmt::Write;
 use template::Template;
 
 /// Type alias for closures which can be used as value formatters.
-pub type ValueFormatter = dyn Fn(&Value, Option<&str>, &mut String) -> Result<()>;
+pub type PlainFormatter = dyn Fn(&Value, &mut String) -> Result<()>;
+pub type FormatterWithArgs = dyn Fn(&Value, Option<&str>, &mut String) -> Result<()>;
+
+enum ValueFormatter {
+    Plain(Box<PlainFormatter>),
+    WithArgs(Box<FormatterWithArgs>),
+}
 
 /// Appends `value` to `output`, performing HTML-escaping in the process.
 pub fn escape(value: &str, output: &mut String) {
@@ -124,7 +130,7 @@ pub fn escape(value: &str, output: &mut String) {
 /// * `Value::String` => the string, HTML-escaped
 ///
 /// Arrays and objects are not formatted, and attempting to do so will result in a rendering error.
-pub fn format(value: &Value, _args: Option<&str>, output: &mut String) -> Result<()> {
+pub fn format(value: &Value, output: &mut String) -> Result<()> {
     match value {
         Value::Null => Ok(()),
         Value::Bool(b) => {
@@ -144,7 +150,7 @@ pub fn format(value: &Value, _args: Option<&str>, output: &mut String) -> Result
 }
 
 /// Identical to [`format`](fn.format.html) except that this does not perform HTML escaping.
-pub fn format_unescaped(value: &Value, _args: Option<&str>, output: &mut String) -> Result<()> {
+pub fn format_unescaped(value: &Value, output: &mut String) -> Result<()> {
     match value {
         Value::Null => Ok(()),
         Value::Bool(b) => {
@@ -168,8 +174,8 @@ pub fn format_unescaped(value: &Value, _args: Option<&str>, output: &mut String)
 /// register templates and formatters.
 pub struct TinyTemplate<'template> {
     templates: HashMap<&'template str, Template<'template>>,
-    formatters: HashMap<&'template str, Box<ValueFormatter>>,
-    default_formatter: &'template ValueFormatter,
+    formatters: HashMap<&'template str, ValueFormatter>,
+    default_formatter: &'template PlainFormatter,
 }
 impl<'template> TinyTemplate<'template> {
     /// Create a new TinyTemplate registry. The returned registry contains no templates, and has
@@ -194,7 +200,7 @@ impl<'template> TinyTemplate<'template> {
     /// Changes the default formatter from [`format`](fn.format.html) to `formatter`. Usefull in combination with [`format_unescaped`](fn.format_unescaped.html) to deactivate HTML-escaping
     pub fn set_default_formatter<F>(&mut self, formatter: &'template F)
     where
-        F: 'static + Fn(&Value, Option<&str>, &mut String) -> Result<()>,
+        F: 'static + Fn(&Value, &mut String) -> Result<()>,
     {
         self.default_formatter = formatter;
     }
@@ -202,9 +208,17 @@ impl<'template> TinyTemplate<'template> {
     /// Register the given formatter function under the given name.
     pub fn add_formatter<F>(&mut self, name: &'template str, formatter: F)
     where
+        F: 'static + Fn(&Value, &mut String) -> Result<()>,
+    {
+        self.formatters.insert(name, ValueFormatter::Plain(Box::new(formatter)));
+    }
+
+    /// Register the given formatter function that takes args under the given name.
+    pub fn add_formatter_with_args<F>(&mut self, name: &'template str, formatter: F)
+    where
         F: 'static + Fn(&Value, Option<&str>, &mut String) -> Result<()>,
     {
-        self.formatters.insert(name, Box::new(formatter));
+        self.formatters.insert(name, ValueFormatter::WithArgs(Box::new(formatter)));
     }
 
     /// Render the template with the given name using the given context object. The context

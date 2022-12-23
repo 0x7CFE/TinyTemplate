@@ -10,6 +10,8 @@ use std::fmt::Write;
 use std::slice;
 use ValueFormatter;
 
+use crate::PlainFormatter;
+
 /// Enum defining the different kinds of records on the context stack.
 enum ContextElement<'render, 'template> {
     /// Object contexts shadow everything below them on the stack, because every name is looked up
@@ -130,8 +132,8 @@ impl<'template> Template<'template> {
         &self,
         context: &Value,
         template_registry: &HashMap<&str, Template>,
-        formatter_registry: &HashMap<&str, Box<ValueFormatter>>,
-        default_formatter: &ValueFormatter,
+        formatter_registry: &HashMap<&str, ValueFormatter>,
+        default_formatter: &PlainFormatter,
     ) -> Result<String> {
         // The length of the original template seems like a reasonable guess at the length of the
         // output.
@@ -151,8 +153,8 @@ impl<'template> Template<'template> {
         &self,
         context: &Value,
         template_registry: &HashMap<&str, Template>,
-        formatter_registry: &HashMap<&str, Box<ValueFormatter>>,
-        default_formatter: &ValueFormatter,
+        formatter_registry: &HashMap<&str, ValueFormatter>,
+        default_formatter: &PlainFormatter,
         output: &mut String,
     ) -> Result<()> {
         let mut program_counter = 0;
@@ -187,13 +189,13 @@ impl<'template> Template<'template> {
                             }
                             "@root" => {
                                 let value_to_render = render_context.lookup_root()?;
-                                default_formatter(value_to_render, None, output)?;
+                                default_formatter(value_to_render, output)?;
                             }
                             _ => panic!(), // This should have been caught by the parser.
                         }
                     } else {
                         let value_to_render = render_context.lookup(path)?;
-                        default_formatter(value_to_render, None, output)?;
+                        default_formatter(value_to_render, output)?;
                     }
                     program_counter += 1;
                 }
@@ -202,7 +204,11 @@ impl<'template> Template<'template> {
                     let value_to_render = render_context.lookup(path)?;
                     match formatter_registry.get(name) {
                         Some(formatter) => {
-                            let formatter_result = formatter(value_to_render, *args, output);
+                            let formatter_result = match formatter {
+                                ValueFormatter::Plain(formatter) => formatter(value_to_render, output),
+                                ValueFormatter::WithArgs(formatter) => formatter(value_to_render, *args, output),
+                            };
+
                             if let Err(err) = formatter_result {
                                 return Err(called_formatter_error(self.original_text, name, err));
                             }
@@ -391,20 +397,20 @@ mod test {
         map
     }
 
-    fn format(value: &Value, _args: Option<&str>, output: &mut String) -> Result<()> {
+    fn format(value: &Value, output: &mut String) -> Result<()> {
         output.push_str("{");
-        ::format(value, None, output)?;
+        ::format(value, output)?;
         output.push_str("}");
         Ok(())
     }
 
-    fn formatters() -> HashMap<&'static str, Box<ValueFormatter>> {
-        let mut map = HashMap::<&'static str, Box<ValueFormatter>>::new();
-        map.insert("my_formatter", Box::new(format));
+    fn formatters() -> HashMap<&'static str, ValueFormatter> {
+        let mut map = HashMap::<&'static str, ValueFormatter>::new();
+        map.insert("my_formatter", ValueFormatter::Plain(Box::new(format)));
         map
     }
 
-    pub fn default_formatter() -> &'static ValueFormatter {
+    pub fn default_formatter() -> &'static PlainFormatter {
         &::format
     }
 
@@ -791,7 +797,7 @@ mod test {
         let context = context();
         let template_registry = other_templates();
         let mut formatter_registry = formatters();
-        formatter_registry.insert("unescaped", Box::new(::format_unescaped));
+        formatter_registry.insert("unescaped", ValueFormatter::Plain(Box::new(::format_unescaped)));
         let string = template
             .render(
                 &context,
