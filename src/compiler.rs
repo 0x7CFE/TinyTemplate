@@ -94,8 +94,8 @@ impl<'template> TemplateCompiler<'template> {
                             (true, None) => BranchCondition::IfTrue,
                             (false, None) => BranchCondition::IfFalse,
 
-                            (true, Some(predicate)) => BranchCondition::IfNotCustom { predicate },
-                            (false, Some(predicate)) => BranchCondition::IfCustom { predicate },
+                            (true, Some(predicate)) => BranchCondition::IfCustom { predicate },
+                            (false, Some(predicate)) => BranchCondition::IfNotCustom { predicate },
                         };
 
                         self.instructions
