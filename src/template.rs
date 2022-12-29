@@ -217,7 +217,7 @@ impl<'template> Template<'template> {
                     }
                     program_counter += 1;
                 }
-                Instruction::Branch(path, negate, target) => {
+                Instruction::Branch(path, condition, target) => {
                     let first = path.first().unwrap();
                     let mut truthy = if first.starts_with('@') {
                         let first: &str = &*first;
@@ -235,9 +235,13 @@ impl<'template> Template<'template> {
                         let value_to_render = render_context.lookup(path)?;
                         self.value_is_truthy(value_to_render, path)?
                     };
-                    if *negate {
-                        truthy = !truthy;
-                    }
+
+                    truthy = match condition {
+                        crate::instruction::BranchCondition::IfTrue => truthy,
+                        crate::instruction::BranchCondition::IfFalse => !truthy,
+                        crate::instruction::BranchCondition::IfCustom { predicate } => todo!(),
+                        crate::instruction::BranchCondition::IfNotCustom { predicate } => todo!(),
+                    };
 
                     if truthy {
                         program_counter = *target;

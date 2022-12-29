@@ -1,5 +1,7 @@
 use std::ops::Deref;
 
+use serde_json::Value;
+
 /// TinyTemplate implements a simple bytecode interpreter for its template engine. Instructions
 /// for this interpreter are represented by the Instruction enum and typically contain various
 /// parameters such as the path to context values or name strings.
@@ -32,6 +34,14 @@ pub(crate) type Path<'template> = Vec<PathStep<'template>>;
 /// Path, but as a slice.
 pub(crate) type PathSlice<'a, 'template> = &'a [PathStep<'template>];
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub(crate) enum BranchCondition<'template> {
+    IfTrue,
+    IfFalse,
+    IfCustom { predicate: &'template str },
+    IfNotCustom { predicate: &'template str },
+}
+
 /// Enum representing the bytecode instructions.
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub(crate) enum Instruction<'template> {
@@ -47,7 +57,7 @@ pub(crate) enum Instruction<'template> {
 
     /// Look up the value at the given path and jump to the given instruction index if that value
     /// is truthy (if the boolean is true) or falsy (if the boolean is false)
-    Branch(Path<'template>, bool, usize),
+    Branch(Path<'template>, BranchCondition<'template>, usize),
 
     /// Push a named context on the stack, shadowing only that name.
     PushNamedContext(Path<'template>, &'template str),

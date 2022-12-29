@@ -8,6 +8,8 @@ use error::Error::*;
 use error::{get_offset, Error, Result};
 use instruction::{Instruction, Path, PathStep};
 
+use crate::instruction::BranchCondition;
+
 /// The end point of a branch or goto instruction is not known.
 const UNKNOWN: usize = ::std::usize::MAX;
 
@@ -70,16 +72,25 @@ impl<'template> TemplateCompiler<'template> {
 
                 let (discriminant, rest) = self.consume_block()?;
                 match discriminant {
-                    "if" => {
-                        let (path, negated) = if rest.starts_with("not") {
-                            (self.parse_path(&rest[4..])?, true)
+                    "if" => { // if [not] path [predicate]
+                        let (path, negated, predicate) = if rest.starts_with("not") {
+                            (self.parse_path(&rest[4..])?, true, None::<&str>)
                         } else {
-                            (self.parse_path(rest)?, false)
+                            (self.parse_path(rest)?, false, None)
                         };
                         self.block_stack
                             .push((discriminant, Block::Branch(self.instructions.len())));
+
+                        let condition = match (negated, predicate) {
+                            (true, None) => BranchCondition::IfTrue,
+                            (false, None) => BranchCondition::IfFalse,
+                    
+                            (true, Some(_)) => BranchCondition::IfNotCustom { predicate: "" },
+                            (false, Some(_)) => BranchCondition::IfCustom { predicate: "" },
+                        };
+
                         self.instructions
-                            .push(Instruction::Branch(path, !negated, UNKNOWN));
+                            .push(Instruction::Branch(path, condition, UNKNOWN));
                     }
                     "else" => {
                         self.expect_empty(rest)?;
@@ -514,7 +525,7 @@ mod test {
         let instructions = compile(text).unwrap();
         assert_eq!(2, instructions.len());
         assert_eq!(
-            &Branch(vec![PathStep::Name("foo")], true, 2),
+            &Branch(vec![PathStep::Name("foo")], BranchCondition::IfFalse, 2),
             &instructions[0]
         );
         assert_eq!(&Literal("Hello!"), &instructions[1]);
@@ -526,7 +537,7 @@ mod test {
         let instructions = compile(text).unwrap();
         assert_eq!(2, instructions.len());
         assert_eq!(
-            &Branch(vec![PathStep::Name("foo")], false, 2),
+            &Branch(vec![PathStep::Name("foo")], BranchCondition::IfTrue, 2),
             &instructions[0]
         );
         assert_eq!(&Literal("Hello!"), &instructions[1]);
@@ -538,7 +549,7 @@ mod test {
         let instructions = compile(text).unwrap();
         assert_eq!(4, instructions.len());
         assert_eq!(
-            &Branch(vec![PathStep::Name("foo")], true, 3),
+            &Branch(vec![PathStep::Name("foo")], BranchCondition::IfFalse, 3),
             &instructions[0]
         );
         assert_eq!(&Literal("Hello!"), &instructions[1]);
@@ -591,7 +602,7 @@ mod test {
         assert_eq!(6, instructions.len());
         assert_eq!(&Literal("Hello,"), &instructions[0]);
         assert_eq!(
-            &Branch(vec![PathStep::Name("name")], true, 5),
+            &Branch(vec![PathStep::Name("name")], BranchCondition::IfFalse, 5),
             &instructions[1]
         );
         assert_eq!(&Literal(""), &instructions[2]);
