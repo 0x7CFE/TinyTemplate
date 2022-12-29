@@ -10,7 +10,7 @@ use std::fmt::Write;
 use std::slice;
 use ValueFormatter;
 
-use crate::PlainFormatter;
+use crate::{instruction::BranchCondition, PlainFormatter, Predicate, TinyTemplate};
 
 /// Enum defining the different kinds of records on the context stack.
 enum ContextElement<'render, 'template> {
@@ -134,6 +134,7 @@ impl<'template> Template<'template> {
         template_registry: &HashMap<&str, Template>,
         formatter_registry: &HashMap<&str, ValueFormatter>,
         default_formatter: &PlainFormatter,
+        predicate_registry: &HashMap<&str, Box<Predicate>>,
     ) -> Result<String> {
         // The length of the original template seems like a reasonable guess at the length of the
         // output.
@@ -143,6 +144,7 @@ impl<'template> Template<'template> {
             template_registry,
             formatter_registry,
             default_formatter,
+            predicate_registry,
             &mut output,
         )?;
         Ok(output)
@@ -155,6 +157,7 @@ impl<'template> Template<'template> {
         template_registry: &HashMap<&str, Template>,
         formatter_registry: &HashMap<&str, ValueFormatter>,
         default_formatter: &PlainFormatter,
+        predicate_registry: &HashMap<&str, Box<Predicate>>,
         output: &mut String,
     ) -> Result<()> {
         let mut program_counter = 0;
@@ -205,8 +208,12 @@ impl<'template> Template<'template> {
                     match formatter_registry.get(name) {
                         Some(formatter) => {
                             let formatter_result = match formatter {
-                                ValueFormatter::Plain(formatter) => formatter(value_to_render, output),
-                                ValueFormatter::WithArgs(formatter) => formatter(value_to_render, *args, output),
+                                ValueFormatter::Plain(formatter) => {
+                                    formatter(value_to_render, output)
+                                }
+                                ValueFormatter::WithArgs(formatter) => {
+                                    formatter(value_to_render, *args, output)
+                                }
                             };
 
                             if let Err(err) = formatter_result {
@@ -237,10 +244,29 @@ impl<'template> Template<'template> {
                     };
 
                     truthy = match condition {
-                        crate::instruction::BranchCondition::IfTrue => truthy,
-                        crate::instruction::BranchCondition::IfFalse => !truthy,
-                        crate::instruction::BranchCondition::IfCustom { predicate } => todo!(),
-                        crate::instruction::BranchCondition::IfNotCustom { predicate } => todo!(),
+                        BranchCondition::IfTrue => truthy,
+                        BranchCondition::IfFalse => !truthy,
+
+                        BranchCondition::IfCustom { predicate }
+                        | BranchCondition::IfNotCustom { predicate } => {
+                            let predicate_registry: HashMap<&'template str, Box<Predicate>> =
+                                HashMap::new();
+
+                            let predicate = predicate_registry.get(predicate).ok_or_else(|| {
+                                Error::GenericError {
+                                    msg: format!("unknown predicate: {}", predicate),
+                                }
+                            })?;
+
+                            let value_to_render = render_context.lookup(path)?;
+                            let result = predicate(value_to_render)?;
+
+                            if matches!(condition, BranchCondition::IfCustom { .. }) {
+                                result
+                            } else {
+                                !result
+                            }
+                        }
                     };
 
                     if truthy {
@@ -316,6 +342,7 @@ impl<'template> Template<'template> {
                                 template_registry,
                                 formatter_registry,
                                 default_formatter,
+                                predicate_registry,
                                 output,
                             );
                             if let Err(err) = called_templ_result {
@@ -430,6 +457,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello!", &string);
@@ -447,6 +475,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("5", &string);
@@ -464,6 +493,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("The number of the day is 10.", &string);
@@ -481,6 +511,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello!", &string);
@@ -498,6 +529,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("", &string);
@@ -515,6 +547,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello!", &string);
@@ -532,6 +565,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Goodbye!", &string);
@@ -549,6 +583,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("", &string);
@@ -566,6 +601,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello!", &string);
@@ -583,6 +619,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Goodbye!", &string);
@@ -600,6 +637,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello!", &string);
@@ -619,6 +657,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hi, Hello!", &string);
@@ -636,6 +675,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("10 5", &string);
@@ -653,6 +693,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("123", &string);
@@ -670,6 +711,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("012", &string);
@@ -688,6 +730,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("0", &string);
@@ -706,6 +749,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("2", &string);
@@ -723,6 +767,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("151", &string);
@@ -740,6 +785,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("10", &string);
@@ -757,6 +803,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("{10}", &string);
@@ -774,6 +821,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap_err();
     }
@@ -790,6 +838,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("1:&lt; 2:&gt; 3:&amp; 4:&#39; 5:&quot;", &string);
@@ -801,13 +850,17 @@ mod test {
         let context = context();
         let template_registry = other_templates();
         let mut formatter_registry = formatters();
-        formatter_registry.insert("unescaped", ValueFormatter::Plain(Box::new(::format_unescaped)));
+        formatter_registry.insert(
+            "unescaped",
+            ValueFormatter::Plain(Box::new(::format_unescaped)),
+        );
         let string = template
             .render(
                 &context,
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("1:< 2:> 3:& 4:' 5:\"", &string);
@@ -826,6 +879,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello World!", &string);
@@ -844,6 +898,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("Hello World!", &string);
@@ -862,6 +917,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("foobar", &string);
@@ -880,6 +936,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("not truthy", &string);
@@ -898,6 +955,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("truthy", &string);
@@ -921,6 +979,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("456123", &string);
@@ -947,6 +1006,7 @@ mod test {
                 &template_registry,
                 &formatter_registry,
                 &default_formatter(),
+                &Default::default(),
             )
             .unwrap();
         assert_eq!("456123", &string);

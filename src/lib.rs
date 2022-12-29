@@ -91,6 +91,8 @@ enum ValueFormatter {
     WithArgs(Box<FormatterWithArgs>),
 }
 
+pub type Predicate = dyn Fn(&Value) -> Result<bool>;
+
 /// Appends `value` to `output`, performing HTML-escaping in the process.
 pub fn escape(value: &str, output: &mut String) {
     // Algorithm taken from the rustdoc source code.
@@ -176,6 +178,7 @@ pub struct TinyTemplate<'template> {
     templates: HashMap<&'template str, Template<'template>>,
     formatters: HashMap<&'template str, ValueFormatter>,
     default_formatter: &'template PlainFormatter,
+    predicate_registry: HashMap<&'template str, Box<Predicate>>,
 }
 impl<'template> TinyTemplate<'template> {
     /// Create a new TinyTemplate registry. The returned registry contains no templates, and has
@@ -185,6 +188,7 @@ impl<'template> TinyTemplate<'template> {
             templates: HashMap::default(),
             formatters: HashMap::default(),
             default_formatter: &format,
+            predicate_registry: HashMap::default(),
         };
         tt.add_formatter("unescaped", format_unescaped);
         tt
@@ -221,6 +225,14 @@ impl<'template> TinyTemplate<'template> {
         self.formatters.insert(name, ValueFormatter::WithArgs(Box::new(formatter)));
     }
 
+    /// Register the given predicate function under the given name.
+    pub fn add_predicate<P>(&mut self, name: &'template str, predicate: P)
+    where
+        P: 'static + Fn(&Value) -> Result<bool>,
+    {
+        self.predicate_registry.insert(name, Box::new(predicate));
+    }
+
     /// Render the template with the given name using the given context object. The context
     /// object must implement `serde::Serialize` as it will be converted to `serde_json::Value`.
     pub fn render<C>(&self, template: &str, context: &C) -> Result<String>
@@ -234,6 +246,7 @@ impl<'template> TinyTemplate<'template> {
                 &self.templates,
                 &self.formatters,
                 self.default_formatter,
+                &self.predicate_registry,
             ),
             None => Err(Error::GenericError {
                 msg: format!("Unknown template '{}'", template),
