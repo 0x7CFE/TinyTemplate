@@ -72,21 +72,30 @@ impl<'template> TemplateCompiler<'template> {
 
                 let (discriminant, rest) = self.consume_block()?;
                 match discriminant {
-                    "if" => { // if [not] path [predicate]
-                        let (path, negated, predicate) = if rest.starts_with("not") {
-                            (self.parse_path(&rest[4..])?, true, None::<&str>)
+                    "if" => {
+                        // if [not] path [predicate]
+                        let (rest, negated) = if rest.starts_with("not") {
+                            let rest = rest[4..].trim();
+                            (rest, true)
                         } else {
-                            (self.parse_path(rest)?, false, None)
+                            (rest, false)
                         };
+
+                        let (path, predicate) = match rest.split(' ').collect::<Vec<_>>()[..] {
+                            [path, predicate] => (self.parse_path(path)?, Some(predicate)),
+                            [path] => (self.parse_path(path)?, None),
+                            _ => todo!(),
+                        };
+
                         self.block_stack
                             .push((discriminant, Block::Branch(self.instructions.len())));
 
                         let condition = match (negated, predicate) {
                             (true, None) => BranchCondition::IfTrue,
                             (false, None) => BranchCondition::IfFalse,
-                    
-                            (true, Some(_)) => BranchCondition::IfNotCustom { predicate: "" },
-                            (false, Some(_)) => BranchCondition::IfCustom { predicate: "" },
+
+                            (true, Some(predicate)) => BranchCondition::IfNotCustom { predicate },
+                            (false, Some(predicate)) => BranchCondition::IfCustom { predicate },
                         };
 
                         self.instructions
