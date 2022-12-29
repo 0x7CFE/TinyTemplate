@@ -249,9 +249,6 @@ impl<'template> Template<'template> {
 
                         BranchCondition::IfCustom { predicate }
                         | BranchCondition::IfNotCustom { predicate } => {
-                            let predicate_registry: HashMap<&'template str, Box<Predicate>> =
-                                HashMap::new();
-
                             let predicate = predicate_registry.get(predicate).ok_or_else(|| {
                                 Error::GenericError {
                                     msg: format!("unknown predicate: {}", predicate),
